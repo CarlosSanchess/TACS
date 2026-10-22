@@ -25,23 +25,9 @@ For the Problem DSL, each concept includes its intrinsic attributes, extrinsic a
 
 | Concept | Intrinsic Properties (Attributes) | Extrinsic Properties (Connections) | Solution DSL Mapping ($T_1$ Target) |
 | --- | --- | --- | --- |
-| **`LoadBalancingProblem`** | `name : String`<br>
-
-<br>`balanced : Boolean [0..1]`<br>
-
-<br>`assigned : Boolean [0..1]` | Contains 2 `Machine` objects<br>
-
-<br>Contains $\ge 2$ `Job` objects | Maps to root **`LACProblem`** instance holding global system constraints. |
-| **`Job`** | `id : String`<br>
-
-<br>`load : Integer` | Belongs to one `LoadBalancingProblem`<br>
-
-<br>Assigned to $0..1$ `Machine` | Maps to a **`DecisionVariable`** $y_i$ ($y_i \in \{0,1\}$) and a linear **`Term`** with `coef = load`. |
-| **`Machine`** | `name : String`<br>
-
-<br>`/total_load : Integer` *(derived)* | Belongs to one `LoadBalancingProblem`<br>
-
-<br>Executes $0..*$ `Job` objects | Derived target value $S/2$ maps to **`Constraint.const`** ($-S/2$). |
+| **`LoadBalancingProblem`** | `name : String`<br>`balanced : Boolean [0..1]`<br>`assigned : Boolean [0..1]` | Contains 2 `Machine` objects<br>Contains $\ge 2$ `Job` objects | Maps to root **`LACProblem`** instance holding global system constraints. |
+| **`Job`** | `id : String`<br>`load : Integer` | Belongs to one `LoadBalancingProblem`<br>Assigned to $0..1$ `Machine` | Maps to a **`DecisionVariable`** $y_i$ ($y_i \in \{0,1\}$) and a linear **`Term`** with `coef = load`. |
+| **`Machine`** | `name : String`<br>`/total_load : Integer` *(derived)* | Belongs to one `LoadBalancingProblem`<br>Executes $0..*$ `Job` objects | Derived target value $S/2$ maps to **`Constraint.const`** ($-S/2$). |
 
 ---
 
@@ -49,24 +35,10 @@ For the Problem DSL, each concept includes its intrinsic attributes, extrinsic a
 
 | Concept | Intrinsic Properties (Attributes) | Extrinsic Properties (Connections) | Description / Role in Execution |
 | --- | --- | --- | --- |
-| **`LACProblem`** | *(none)* | Aggregates $\ge 1$ `Constraint`<br>
-
-<br>Aggregates $\ge 1$ `DecisionVariable` | System root containing all arithmetic constraint equations. |
-| **`DecisionVariable`** | `name : String`<br>
-
-<br>`bitWidth : Integer`<br>
-
-<br>`value : Integer [0..1]` | Belongs to one `LACProblem`<br>
-
-<br>Referenced by $0..*$ `Term` objects | Unknown binary variable ($y_i$) mapped to qubit register index in $T_2$. |
-| **`Constraint`** | `const : Integer`<br>
-
-<br>`oper : String` | Belongs to one `LACProblem`<br>
-
-<br>Aggregates $\ge 1$ `Term` objects | Represents atomic relation $\sum a_i y_i + \text{const} \text{ oper } 0$. |
-| **`Term`** | `coef : Integer` | Belongs to one `Constraint`<br>
-
-<br>References 1 `DecisionVariable` | Represents linear monomial term $a_i \cdot y_i$ inside a constraint atom. |
+| **`LACProblem`** | *(none)* | Aggregates $\ge 1$ `Constraint`<br>Aggregates $\ge 1$ `DecisionVariable` | System root containing all arithmetic constraint equations. |
+| **`DecisionVariable`** | `name : String`<br>`bitWidth : Integer`<br>`value : Integer [0..1]` | Belongs to one `LACProblem`<br>Referenced by $0..*$ `Term` objects | Unknown binary variable ($y_i$) mapped to qubit register index in $T_2$. |
+| **`Constraint`** | `const : Integer`<br>`oper : String` | Belongs to one `LACProblem`<br>Aggregates $\ge 1$ `Term` objects | Represents atomic relation $\sum a_i y_i + \text{const} \text{ oper } 0$. |
+| **`Term`** | `coef : Integer` | Belongs to one `Constraint`<br>References 1 `DecisionVariable` | Represents linear monomial term $a_i \cdot y_i$ inside a constraint atom. |
 
 ## 3. Problem DSL Metamodel & Justifications
 
