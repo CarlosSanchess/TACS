@@ -16,4 +16,3 @@ def fetch_diagram(input_file: str, output_svg: str):
 if __name__ == "__main__":
     fetch_diagram("models.py", "problem_dsl_diagram.svg")
     fetch_diagram("models_solution.py", "solution_dsl_diagram.svg")
-    fetch_diagram("imported_project_project.py", "problem_diagram.svg")
