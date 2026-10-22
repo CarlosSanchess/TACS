@@ -1,32 +1,24 @@
+# models.py
 from besser.BUML.metamodel.structural import (
     DomainModel, Class, Property,
     StringType, IntegerType, BooleanType, Multiplicity,
     BinaryAssociation
 )
 
-# Tipos de dados primitivos
-str_type = StringType()
-int_type = IntegerType()
-bool_type = BooleanType()
 
-problem_model = DomainModel(name="LoadBalancingProblemDSL")
-
-# Definição das classes
+# 1(Load Balancing)
 lb_problem = Class(name="LoadBalancingProblem")
 job = Class(name="Job")
 machine = Class(name="Machine")
 
-# Atributos
-lb_problem.add_attribute(Property(name="balanced", type=bool_type, is_optional=True))
-lb_problem.add_attribute(Property(name="assigned", type=bool_type, is_optional=True))
+# Attributes (Note: StringType, IntegerType, BooleanType are passed directly without parentheses)
+lb_problem.add_attribute(Property(name="balanced", type=BooleanType, is_optional=True))
+lb_problem.add_attribute(Property(name="assigned", type=BooleanType, is_optional=True))
 
-job.add_attribute(Property(name="weight", type=int_type))
+job.add_attribute(Property(name="weight", type=IntegerType))
+machine.add_attribute(Property(name="load", type=IntegerType, is_derived=True))
 
-# Atributo derivado /load
-machine.add_attribute(Property(name="load", type=int_type, is_derived=True))
-
-# Associações
-# LoadBalancingProblem (1) <*>---> (*) Job
+# Associations
 lb_has_jobs = BinaryAssociation(
     name="lb_has_jobs",
     ends={
@@ -35,7 +27,6 @@ lb_has_jobs = BinaryAssociation(
     }
 )
 
-# LoadBalancingProblem (1) <*>---> (*) Machine
 lb_has_machines = BinaryAssociation(
     name="lb_has_machines",
     ends={
@@ -44,7 +35,6 @@ lb_has_machines = BinaryAssociation(
     }
 )
 
-# Job (*) <---> (0..1) Machine
 job_assigned_machine = BinaryAssociation(
     name="job_assigned_machine",
     ends={
@@ -53,6 +43,9 @@ job_assigned_machine = BinaryAssociation(
     }
 )
 
-problem_model.add_classes({lb_problem, job, machine})
-problem_model.add_associations({lb_has_jobs, lb_has_machines, job_assigned_machine})
-
+# DomainModel Initialization
+problem_model = DomainModel(
+    name="LoadBalancingProblemDSL",
+    types={lb_problem, job, machine},
+    associations={lb_has_jobs, lb_has_machines, job_assigned_machine}
+)
