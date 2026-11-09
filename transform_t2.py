@@ -2,6 +2,8 @@ from besser.BUML.metamodel.quantum import (
     QuantumCircuit,
     QuantumRegister,
     ClassicalRegister,
+    HadamardGate,
+    PauliXGate,
 )
 
 from problem_object_model import problem_instance
@@ -81,6 +83,25 @@ def extract_constraint_terms(model, constraint_obj):
 
     return result
 
+
+def find_target_qubit(op):
+    """Extract target qubit from BESSER operation object."""
+    if hasattr(op, "target_qubits") and op.target_qubits:
+        return op.target_qubits[0]
+    if hasattr(op, "target_qubit") and op.target_qubit:
+        return op.target_qubit
+    return None
+
+
+def get_qubit_label(circuit, qubit_obj):
+    """Identify register name and index for any qubit reference."""
+    if qubit_obj is None:
+        return "N/A"
+    for qreg in circuit.qregs:
+        if qubit_obj in qreg.qubits:
+            idx = qreg.qubits.index(qubit_obj)
+            return f"{qreg.name}[{idx}]"
+    return str(qubit_obj)
 
 def transform_t2(lac_model):
     """
@@ -188,6 +209,15 @@ def transform_t2(lac_model):
     circuit.add_qreg(mark_register)
     circuit.add_creg(classical_register)
 
+    # State preparation
+    # Put decision qubits into equal superposition (| + >)
+    for qubit in decision_register.qubits:
+        circuit.add_operation(HadamardGate(target_qubit=qubit))
+
+    mark_qubit = mark_register.qubits[0]
+    circuit.add_operation(PauliXGate(target_qubit=mark_qubit))
+    circuit.add_operation(HadamardGate(target_qubit=mark_qubit))
+
     # Store useful transformation metadata.
     circuit.metadata = {
         "algorithm": "Grover",
@@ -250,4 +280,10 @@ if __name__ == "__main__":
         f"{len(quantum_model.operations)}"
     )
 
-    print("\nT2.1 completed.")
+    print("\n========== T2.2 ==========")
+    
+    print("\nGenerated operations detail:")
+    for i, op in enumerate(quantum_model.operations):
+        target_obj = find_target_qubit(op)
+        label = get_qubit_label(quantum_model, target_obj)
+        print(f"  {i+1:2d}. {op.__class__.__name__} on {label}")
