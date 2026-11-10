@@ -53,17 +53,24 @@ def create_load_balancing_instance(instance_name: str, job_loads: list[int]) -> 
             LinkEnd(name="jobs", association_end=lb_j_jobs_end, object=j_obj)
         ]))
 
-    return ObjectModel(
+    # Instantiate ObjectModel with objects
+    model = ObjectModel(
         name=instance_name,
-        instances=instances,
-        links=links
+        objects=instances
     )
+
+    # Populate links in-place on the model's links set
+    try:
+        model.links.update(links)
+    except AttributeError:
+        model._links = links
+
+    return model
 
 
 # =====================================================================
 # THREE TEST INSTANCES
 # =====================================================================
-
 
 instance_1_tiny = create_load_balancing_instance(
     instance_name="LoadBalancing_Tiny_2Jobs",
@@ -97,6 +104,7 @@ if __name__ == "__main__":
     
     print("========== INSTANCE CREATION SUMMARY ==========")
     for inst in test_instances:
-        jobs = [o for o in inst.instances if o.classifier == job]
+        objs = inst.objects if hasattr(inst, "objects") and inst.objects else inst.instances
+        jobs = [o for o in objs if o.classifier == job]
         loads = [j.load for j in jobs]
         print(f"Instance: {inst.name:<35} | Jobs: {len(jobs)} | Loads: {loads} | Total Load: {sum(loads)}")

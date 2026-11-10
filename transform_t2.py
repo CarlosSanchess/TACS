@@ -5,7 +5,6 @@ from besser.BUML.metamodel.quantum import (
     ClassicalRegister,
     HadamardGate,
     PauliXGate,
-    CXGate,
     Measurement,
     ControlState,
 )
@@ -87,15 +86,6 @@ def extract_constraint_terms(model, constraint_obj):
     return result
 
 
-def find_target_qubit(op):
-    """Extract target qubit from BESSER operation object."""
-    if hasattr(op, "target_qubits") and op.target_qubits:
-        return op.target_qubits[0]
-    if hasattr(op, "target_qubit") and op.target_qubit:
-        return op.target_qubit
-    return None
-
-
 def get_qubit_label(circuit, qubit_obj):
     """Identify register name and index for any qubit reference."""
     if qubit_obj is None:
@@ -107,109 +97,104 @@ def get_qubit_label(circuit, qubit_obj):
     return str(qubit_obj)
 
 
-def add_constant_to_register(circuit, target_reg, constant_val):
-    """
-    Applies bitwise X gates to target_reg to add/subtract a constant value in two's complement.
-    """
-    val = constant_val & ((1 << target_reg.size) - 1)
-    for bit_idx in range(target_reg.size):
-        if (val >> bit_idx) & 1:
-            circuit.add_operation(PauliXGate(target_qubit=target_reg.qubits[bit_idx]))
+def find_target_qubit(op):
+    """Extract target qubit from BESSER operation object."""
+    if hasattr(op, "target_qubits") and op.target_qubits:
+        return op.target_qubits[0]
+    if hasattr(op, "target_qubit") and op.target_qubit:
+        return op.target_qubit
+    return None
 
 
-def build_compute_oracle(circuit, decision_reg, accum_reg, terms, constant_val):
-    """
-    Step 1: Compute phase.
-    Adds constant_val plus (coef * variable) for each term into accum_reg.
-    """
-    add_constant_to_register(circuit, accum_reg, constant_val)
+# ==============================================================================
+# REVERSIBLE ARITHMETIC & GROVER OPERATORS
+# ==============================================================================
 
-    curr_dec_idx = 0
-    for coef, var_obj in terms:
-        dec_qubit = decision_reg.qubits[curr_dec_idx]
-        coef_val = coef & ((1 << accum_reg.size) - 1)
-        for bit_idx in range(accum_reg.size):
-            if (coef_val >> bit_idx) & 1:
-                circuit.add_operation(
-                    CXGate(control_qubit=dec_qubit, target_qubit=accum_reg.qubits[bit_idx])
-                )
-        curr_dec_idx += var_obj.bitWidth
-
-
-def build_mark_oracle(circuit, accum_reg, mark_qubit, operator="=="):
+def add_controlled_increment(circuit, decision_qubit, accumulator_qubits):
     """
-    Step 2: Mark phase.
-    Checks if accum_reg satisfies operator (e.g. accum_reg == 0) and flips mark_qubit.
+    Add 1 to the accumulator with carry propagation if decision_qubit is 1.
+    accumulator_qubits are little-endian.
     """
-    if operator == "==":
-        for q in accum_reg.qubits:
-            circuit.add_operation(PauliXGate(target_qubit=q))
-        
+    n = len(accumulator_qubits)
+    for i in range(n - 1, 0, -1):
+        controls = [decision_qubit] + accumulator_qubits[:i]
         circuit.add_operation(
-            PauliXGate(target_qubit=mark_qubit, control_qubits=list(accum_reg.qubits))
+            PauliXGate(
+                target_qubit=accumulator_qubits[i],
+                control_qubits=controls,
+                control_states=[ControlState.CONTROL for _ in controls],
+            )
         )
-        
-        for q in accum_reg.qubits:
-            circuit.add_operation(PauliXGate(target_qubit=q))
+    circuit.add_operation(
+        PauliXGate(
+            target_qubit=accumulator_qubits[0],
+            control_qubits=[decision_qubit],
+            control_states=[ControlState.CONTROL],
+        )
+    )
 
 
-def build_uncompute_oracle(circuit, decision_reg, accum_reg, terms, constant_val):
-    """
-    Step 3: Uncompute phase.
-    Reverses build_compute_oracle operations in exact reverse order.
-    """
-    curr_dec_idx = sum(var_obj.bitWidth for _, var_obj in terms)
-    for coef, var_obj in reversed(terms):
-        curr_dec_idx -= var_obj.bitWidth
-        dec_qubit = decision_reg.qubits[curr_dec_idx]
-        coef_val = coef & ((1 << accum_reg.size) - 1)
-        for bit_idx in reversed(range(accum_reg.size)):
-            if (coef_val >> bit_idx) & 1:
-                circuit.add_operation(
-                    CXGate(control_qubit=dec_qubit, target_qubit=accum_reg.qubits[bit_idx])
-                )
-
-    add_constant_to_register(circuit, accum_reg, constant_val)
+def add_weighted_terms(circuit, decision_qubits, accumulator_qubits, terms):
+    """Add each job's weight conditionally with carry propagation."""
+    for (coef, _), decision_qubit in zip(terms, decision_qubits):
+        for _ in range(coef):
+            add_controlled_increment(circuit, decision_qubit, accumulator_qubits)
 
 
-def build_diffuser(circuit, decision_reg):
-    """
-    Step 4: Grover Diffuser (Inversion about the mean) on decision_register.
-    H^n -> X^n -> Multi-controlled Z -> X^n -> H^n
-    """
-    for q in decision_reg.qubits:
-        circuit.add_operation(HadamardGate(target_qubit=q))
-    for q in decision_reg.qubits:
+def add_zero_phase_marker(circuit, accumulator_qubits, mark_qubit):
+    """Flip phase of mark_qubit when all accumulator qubits are zero."""
+    for q in accumulator_qubits:
         circuit.add_operation(PauliXGate(target_qubit=q))
 
-    target_q = decision_reg.qubits[-1]
-    control_qs = list(decision_reg.qubits[:-1])
+    circuit.add_operation(
+        PauliXGate(
+            target_qubit=mark_qubit,
+            control_qubits=accumulator_qubits,
+            control_states=[ControlState.CONTROL for _ in accumulator_qubits],
+        )
+    )
 
-    circuit.add_operation(HadamardGate(target_qubit=target_q))
-    circuit.add_operation(PauliXGate(target_qubit=target_q, control_qubits=control_qs))
-    circuit.add_operation(HadamardGate(target_qubit=target_q))
-
-    for q in decision_reg.qubits:
+    for q in accumulator_qubits:
         circuit.add_operation(PauliXGate(target_qubit=q))
-    for q in decision_reg.qubits:
+
+
+def build_diffuser(circuit, decision_qubits):
+    """Grover Diffuser on decision_register: H^n -> X^n -> MCZ -> X^n -> H^n."""
+    for q in decision_qubits:
+        circuit.add_operation(HadamardGate(target_qubit=q))
+    for q in decision_qubits:
+        circuit.add_operation(PauliXGate(target_qubit=q))
+
+    target_q = decision_qubits[-1]
+    control_qs = decision_qubits[:-1]
+
+    circuit.add_operation(HadamardGate(target_qubit=target_q))
+    circuit.add_operation(
+        PauliXGate(
+            target_qubit=target_q,
+            control_qubits=control_qs,
+            control_states=[ControlState.CONTROL for _ in control_qs],
+        )
+    )
+    circuit.add_operation(HadamardGate(target_qubit=target_q))
+
+    for q in decision_qubits:
+        circuit.add_operation(PauliXGate(target_qubit=q))
+    for q in decision_qubits:
         circuit.add_operation(HadamardGate(target_qubit=q))
 
 
-def transform_t2(lac_model):
+# ==============================================================================
+# MAIN TRANSFORMATION T2
+# ==============================================================================
+
+def transform_t2(lac_model, num_solutions=2):
     """
-    T2 Transformation: Generates complete Grover Search quantum circuit
+    T2 Transformation: Generates complete Grover Search quantum circuit model
     from a Linear Arithmetic Constraint (LAC) solution model.
     """
-
-    variables = [
-        obj for obj in lac_model.instances
-        if obj.classifier == decision_var
-    ]
-
-    constraints = [
-        obj for obj in lac_model.instances
-        if obj.classifier == constraint
-    ]
+    variables = [obj for obj in lac_model.instances if obj.classifier == decision_var]
+    constraints = [obj for obj in lac_model.instances if obj.classifier == constraint]
 
     if not variables:
         raise ValueError("The LAC model has no decision variables.")
@@ -263,74 +248,70 @@ def transform_t2(lac_model):
         else:
             minimum += coefficient * variable_max
 
-    accumulator_width = signed_bit_width(
-        minimum, maximum
-    )
+    accumulator_width = signed_bit_width(minimum, maximum)
 
     # Instantiate Quantum Circuit and Registers
-    circuit = QuantumCircuit(
-        name="Grover_Linear_Constraint_Search"
-    )
+    circuit = QuantumCircuit(name="Grover_Linear_Constraint_Search")
 
-    decision_register = QuantumRegister(
-        name="decision",
-        size=sum(v.bitWidth for v in variables),
-    )
-
-    accumulator_register = QuantumRegister(
-        name="accumulator",
-        size=accumulator_width,
-    )
-
-    mark_register = QuantumRegister(
-        name="mark",
-        size=1,
-    )
-
-    classical_register = ClassicalRegister(
-        name="result",
-        size=sum(v.bitWidth for v in variables),
-    )
+    num_decision_bits = sum(v.bitWidth for v in variables)
+    decision_register = QuantumRegister(name="decision", size=num_decision_bits)
+    accumulator_register = QuantumRegister(name="accumulator", size=accumulator_width)
+    mark_register = QuantumRegister(name="mark", size=1)
+    classical_register = ClassicalRegister(name="result", size=num_decision_bits)
 
     circuit.add_qreg(decision_register)
     circuit.add_qreg(accumulator_register)
     circuit.add_qreg(mark_register)
     circuit.add_creg(classical_register)
 
+    decision_qubits = list(decision_register.qubits)
+    accumulator_qubits = list(accumulator_register.qubits)
+    mark_qubit = mark_register.qubits[0]
+
     # 1. State preparation
-    for qubit in decision_register.qubits:
+    for qubit in decision_qubits:
         circuit.add_operation(HadamardGate(target_qubit=qubit))
 
-    mark_qubit = mark_register.qubits[0]
     circuit.add_operation(PauliXGate(target_qubit=mark_qubit))
     circuit.add_operation(HadamardGate(target_qubit=mark_qubit))
 
-    # 2. Grover Iteration Loop Calculation
-    num_decision_bits = decision_register.size
-    num_solutions = 1 
+    # 2. Grover Iteration Count Calculation
     num_iterations = max(
         1, int(math.floor((math.pi / 4.0) * math.sqrt((2 ** num_decision_bits) / num_solutions)))
     )
 
-    # 3. Add Grover Iterations (Compute -> Mark -> Uncompute -> Diffuser)
+    # 3. Grover Iterations (Compute -> Mark -> Uncompute -> Diffuser)
     for _ in range(num_iterations):
-        build_compute_oracle(
-            circuit, decision_register, accumulator_register, terms, constraint_obj.const
-        )
-        build_mark_oracle(
-            circuit, accumulator_register, mark_qubit, constraint_obj.oper
-        )
-        build_uncompute_oracle(
-            circuit, decision_register, accumulator_register, terms, constraint_obj.const
-        )
-        build_diffuser(circuit, decision_register)
+        compute_start = len(circuit.operations)
+
+        # Load constant (-16) in two's complement into accumulator
+        c_val = constraint_obj.const
+        twos_comp = (c_val + (1 << accumulator_width)) % (1 << accumulator_width)
+        for bit_idx in range(accumulator_width):
+            if (twos_comp >> bit_idx) & 1:
+                circuit.add_operation(PauliXGate(target_qubit=accumulator_qubits[bit_idx]))
+
+        # Add weighted terms with carry propagation
+        add_weighted_terms(circuit, decision_qubits, accumulator_qubits, terms)
+        compute_end = len(circuit.operations)
+
+        # Mark Phase
+        add_zero_phase_marker(circuit, accumulator_qubits, mark_qubit)
+
+        # Uncompute Phase (Reversing exact compute operations)
+        compute_ops = circuit.operations[compute_start:compute_end]
+        for op in reversed(compute_ops):
+            circuit.add_operation(op)
+
+        # Diffuser Layer
+        build_diffuser(circuit, decision_qubits)
 
     # 4. Measurement
     for i in range(num_decision_bits):
         circuit.add_operation(
             Measurement(
-                target_qubit=decision_register.qubits[i],
-                output_bit=classical_register.bits[i]  # Fixed: output_bit & .bits[i]
+                target_qubit=decision_qubits[i],
+                output_bit=i,
             )
         )
 
@@ -342,9 +323,7 @@ def transform_t2(lac_model):
         "constant": constraint_obj.const,
         "expression_minimum": minimum,
         "expression_maximum": maximum,
-        "decision_variables": [
-            variable.name for variable in variables
-        ],
+        "decision_variables": [variable.name for variable in variables],
         "accumulator_width": accumulator_width,
         "grover_iterations": num_iterations,
         "stage": "T2.2_grover_circuit_generation",
