@@ -224,3 +224,188 @@ if __name__ == "__main__":
 
     for inst, label in suite:
         validate_quantum_vs_classical(inst, label)
+
+============================================================
+LLM USAGE LOG — PART II DEVELOPMENT (11 NOVEMBER 2026)
+============================================================
+
+Tool/model: ChatGPT (GPT-6)
+Goal: Develop and validate the Class C Partition Problem pipeline, especially reversible arithmetic, Grover oracle/diffusion, and BESSER-to-Qiskit code generation.
+
+Summary of assistance and work performed:
+
+1. Reviewed the existing T1/T2 work and the BESSER quantum metamodel/generator API. Confirmed that T1 transforms the sample load-balancing problem into a LAC equality with binary variables. For loads [2, 3, 5, 6], the expression is 4*y1 + 6*y2 + 10*y3 + 12*y4 - 16 = 0. Six accumulator bits are required for the signed range [-16, 16]. T2.1 had created registers, but did not yet synthesize the complete Grover circuit.
+
+2. Tested the reversible weighted-adder/oracle construction. The BESSER circuit model represented the zero detector as an X on the phase qubit controlled by all six accumulator qubits in ANTI_CONTROL state. The corrected oracle construction explicitly recorded the compute-operation range and reversed it for uncomputation. The inspected oracle contained 391 operations, including the zero detector at operation 196, target qubit 10, controls 4–9, all anti-controls.
+
+3. Created and ran an exhaustive computational-basis oracle check over all 16 four-bit assignments. All 16 tests passed: decision bits were unchanged, the accumulator returned to zero, and only assignments 0110 and 1001 received phase sign -1. This was a classical gate-sequence/phase-kickback emulation, not a full quantum statevector test of the BESSER oracle.
+
+4. Built the four-qubit Grover diffusion sequence in BESSER (19 operations) and independently checked the equivalent sequence with Qiskit Statevector. An initial expected-sign assertion failed. The tests were corrected after identifying that H^n X^n MCZ X^n H^n implements I - 2|s><s|, the negative of the conventional 2|s><s| - I diffusion operator. This is a global phase difference and does not change measurement probabilities. The corrected statevector checks passed: on |0000>, amplitudes were +7/8 for |0000> and -1/8 for the other states; on the uniform state, the result was its negative.
+
+5. Built a direct Qiskit implementation of the complete 11-qubit Grover search for loads [2, 3, 5, 6], using four decision qubits, six accumulator qubits, and one phase qubit. The phase qubit was prepared in |-> once, and two Grover iterations were applied. Qiskit statevector probability for the two valid assignments was 0.9453125 (94.53125%). Aer simulation with 4096 shots returned 1912 counts for 0110 and 1973 for 1001, 3885 valid outcomes total (94.85% approximately). The direct Qiskit Grover test passed.
+
+6. Tested BESSER's QiskitGenerator with a small two-qubit model containing Hadamard, controlled-X, and measurement. The first generated script failed because QuantumCircuit(qubits=2) created a default quantum register and the script added another register named q; generated code attempted QuantumCircuit(q, q, c). Changing the BESSER circuit constructor to qubits=0 before explicitly adding registers fixed the duplicate-register issue. BESSER then generated the file successfully, and the generated Qiskit program ran on Aer. Results were 521 ones and 503 zeros in 1024 shots, consistent with the expected approximately 50/50 distribution.
+
+What was accepted:
+- The corrected explicit compute/uncompute range for the oracle.
+- Exhaustive testing of all 16 basis assignments as a useful arithmetic/oracle check.
+- The diffusion global-phase explanation and corrected statevector expectations.
+- The direct Qiskit Grover implementation as a validation reference for the medium instance.
+- The BESSER generator smoke test and the qubits=0 fix for explicitly managed registers.
+
+Issues detected and corrections:
+- The original oracle uncompute slice omitted the first accumulator-initialisation operation. This was fixed by recording compute_start and compute_end and reversing exactly the compute operations.
+- The first diffusion statevector expectation used the opposite sign. The implemented sequence is globally phase-equivalent to conventional Grover diffusion; expected amplitudes and the uniform-state test were corrected rather than changing the gate sequence.
+- BESSER's QuantumCircuit(qubits=2) already created a default register, causing a duplicate register after adding q explicitly. Using qubits=0 fixed generation and execution.
+- A small BESSER-generated circuit executing successfully does not establish that the full Grover circuit is generated correctly. The full BESSER T2-to-Qiskit integration remains unfinished.
+
+Current status / limitations at the end of this log:
+- T1 for the sample instance has been run and inspected.
+- T2 register derivation and separate gate/oracle/diffusion experiments exist, but a complete model-driven T2 that places the entire Grover circuit in the BESSER quantum model still needs to be completed and tested.
+- The 94.53125% Grover result was obtained from a direct Qiskit implementation, not from the BESSER-generated full circuit.
+- The BESSER QiskitGenerator has only been smoke-tested on a small circuit; the generated full Grover program remains to be built and executed.
+- The exhaustive oracle test is a computational-basis emulation, not a full statevector validation of the BESSER-generated oracle.
+- The classical baseline script for three instances was drafted, but its execution results were not part of this conversation. Three-instance quantum-vs-classical validation and the unsatisfiable-instance behaviour still require actual runs and careful interpretation.
+
+Next actions:
+1. Integrate state preparation, reversible arithmetic, oracle, diffusion, Grover iterations, and measurements into T2's BESSER QuantumCircuit model.
+2. Generate the full Qiskit script using BESSER's QiskitGenerator without manually editing generated code.
+3. Execute the generated script with Aer and compare its measured solutions/probabilities with the direct Qiskit reference and classical brute-force baseline.
+4. Run at least three distinct problem instances, including multiple solutions and a no-solution instance where appropriate; document limitations for Grover when the number of solutions is zero or unknown.
+5. Update the technical report and retain this usage log, clearly distinguishing model-generated results from independently constructed Qiskit validation code.
+
+============================================================
+SELECTED PROMPTS AND OUTPUTS — CONVERSATION EVIDENCE
+============================================================
+
+The following excerpts retain representative prompts and corresponding
+useful outputs/findings. They are selective rather than a complete transcript.
+Prompt wording is reproduced where available; where only the task is established
+in the conversation summary, it is labelled as a concise reconstruction.
+
+PROMPT 1 — Create a classical baseline for the problem
+------------------------------------------------------
+User prompt:
+"create baseline for the problem"
+
+Assistant output (summary of the generated Python baseline):
+- Imported the three problem instances: Tiny, Medium, and Unsatisfiable.
+- Implemented classical brute-force partition enumeration over all 2^n
+  assignments.
+- Returned valid bitstrings and the number of solutions.
+- For odd total workload, returned no solutions immediately.
+- For each instance, ran T1 and T2 to obtain quantum metadata, including
+  accumulator width, total qubits, and Grover iteration count.
+- Calculated the uniform-random success probability M/2^n and theoretical
+  Grover success probability sin^2((2R+1) theta), where
+  theta = asin(sqrt(M/2^n)).
+- Printed the classical ground truth and expected quantum-vs-random metrics.
+
+Important qualification:
+The code was drafted in the conversation. Its presence in this log is not
+ evidence that the three-instance suite was executed successfully. The
+ execution outputs were not supplied in the conversation.
+
+PROMPT 2 — Correct the oracle's compute/uncompute sequence
+----------------------------------------------------------
+Prompt excerpt (concise reconstruction):
+"Check the oracle construction and make sure the accumulator is uncomputed."
+
+Assistant output / finding:
+- Identified that the original uncompute slice omitted the first accumulator
+  initialisation operation.
+- Changed the construction to record compute_start and compute_end, then
+  reverse exactly the operations in that compute range.
+- The resulting oracle contained 391 operations.
+- The zero detector was at operation 196, with phase target qubit 10 and
+  accumulator controls 4, 5, 6, 7, 8, and 9, all configured as anti-controls.
+
+PROMPT 3 — Verify the oracle on every decision assignment
+----------------------------------------------------------
+Prompt excerpt (concise reconstruction):
+"Test the oracle exhaustively for all 16 assignments."
+
+Assistant output / finding:
+- Checked all 2^4 = 16 computational-basis decision assignments.
+- All 16 checks passed.
+- Decision bits remained unchanged.
+- The six accumulator bits returned to zero after uncomputation.
+- Exactly 0110 and 1001 received phase sign -1; the other 14 assignments
+  received phase sign +1.
+
+Qualification:
+This was an exhaustive computational-basis gate-sequence emulation with
+phase-kickback sign tracking. It was not a full statevector simulation of
+the BESSER oracle.
+
+PROMPT 4 — Validate the diffusion operator
+------------------------------------------
+Prompt excerpt (concise reconstruction):
+"Verify the diffusion circuit using Qiskit statevector simulation."
+
+Assistant output / finding:
+- The first statevector assertion failed because the expected sign was
+  opposite to the sign produced by the implemented gate sequence.
+- The sequence H^n X^n MCZ X^n H^n implements I - 2|s><s|, which is the
+  negative of the conventional 2|s><s| - I diffusion operator.
+- This difference is a global phase and does not affect measurement
+  probabilities.
+- After correcting the expected state, the statevector tests passed:
+  amplitude +7/8 for |0000> and -1/8 for each other basis state when the
+  input was |0000>; the uniform state was mapped to its negative.
+- The BESSER diffusion model contained 19 operations.
+
+PROMPT 5 — Build and test a complete direct-Qiskit Grover reference
+--------------------------------------------------------------------
+Prompt excerpt (concise reconstruction):
+"Implement the Grover search for the medium instance and test it with Qiskit."
+
+Assistant output / finding:
+- Built an 11-qubit direct Qiskit circuit: four decision qubits, six
+  accumulator qubits, and one phase qubit.
+- Applied two Grover iterations for the two valid assignments.
+- Statevector probability of measuring either valid assignment was
+  0.9453125 (94.53125%).
+- Aer execution with 4096 shots returned 1912 counts for 0110 and 1973
+  counts for 1001: 3885 valid outcomes, approximately 94.85%.
+- The direct Qiskit test passed.
+
+Qualification:
+This circuit was independently constructed in Qiskit. It was a reference
+validation, not output from the complete BESSER T2-to-Qiskit pipeline.
+
+PROMPT 6 — Smoke-test BESSER's Qiskit generator
+------------------------------------------------
+Prompt excerpt (concise reconstruction):
+"Test whether BESSER's QiskitGenerator can generate and run a circuit."
+
+Assistant output / finding:
+- Created a small two-qubit BESSER circuit with a Hadamard, controlled-X,
+  and measurement.
+- The first generated script failed because QuantumCircuit(qubits=2)
+  created a default register and an explicit register named q was then
+  added, producing a duplicate-register construction.
+- Changed the model to use QuantumCircuit(name=..., qubits=0) before
+  explicitly adding registers.
+- Generation then succeeded, and the generated Qiskit script ran on Aer.
+- For 1024 shots, the output was 521 ones and 503 zeros, consistent with
+  an approximately 50/50 distribution.
+
+Qualification:
+This verifies a small BESSER-generated circuit only. It does not verify
+generation or execution of the complete Grover circuit.
+
+PROMPT 7 — Include prompts and outputs in the usage log
+-------------------------------------------------------
+User prompt:
+"some prompts and outputs should be included"
+
+Assistant action:
+- Added this selected prompt-and-output section to the usage log.
+- Included the main tasks, concrete findings, corrections, and test results.
+- Kept qualifications beside results so drafted code, emulated tests,
+  direct-Qiskit validation, and BESSER-generated execution are not confused.
+
+============================================================
+END OF SELECTED PROMPTS AND OUTPUTS
+============================================================
