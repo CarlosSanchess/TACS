@@ -13,6 +13,11 @@ from problem_object_model import (
 from transform_t1 import transform_t1
 from transform_t2 import transform_t2
 from besser.generators.qiskit import QiskitGenerator
+from classical_baseline import (
+    solve_partition_dp,
+    solve_partition_brute_force,
+    extract_problem_loads,
+)
 
 
 def get_job_name(j):
@@ -93,13 +98,26 @@ def run_pipeline_for_instance(instance, output_dir):
     print(f"RUNNING PIPELINE FOR INSTANCE: {instance.name}")
     print("=" * 70)
 
+    # Classical Baseline Execution
+    print("\n[Classical Baseline] Running Classical Solvers...")
+    loads = extract_problem_loads(instance)
+    dp_feasible, dp_sol, dp_time = solve_partition_dp(loads)
+    bf_feasible, bf_bitstrings, bf_time = solve_partition_brute_force(loads)
+
+    print(f"  • Job Loads: {loads} (Total Workload: {sum(loads)})")
+    print(f"  • Dynamic Programming : Feasible = {dp_feasible} | Time = {dp_time * 1000:.4f} ms")
+    if dp_sol:
+        print(f"    Sample DP Vector (y): {dp_sol}")
+    print(f"  • Brute-Force Search  : Feasible = {bf_feasible} | Time = {bf_time * 1000:.4f} ms")
+    print(f"    Ground-Truth Bitstrings (M={len(bf_bitstrings)}): {bf_bitstrings}")
+
     # T1: DSL -> LAC
     print("\n[T1] Transforming DSL ObjectModel to LAC Model...")
     lac_model = transform_t1(instance)
 
     # T2: LAC -> BESSER Quantum Model
     print("[T2] Transforming LAC Model to BESSER Quantum Circuit Model...")
-    num_sols = 2 if "Medium" in instance.name else 1
+    num_sols = max(1, len(bf_bitstrings))
     quantum_model = transform_t2(lac_model, num_solutions=num_sols)
 
     print(f"  • Circuit Name: {quantum_model.name}")
