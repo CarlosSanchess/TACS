@@ -45,8 +45,7 @@ def signed_bit_width(minimum, maximum):
 
 
 def extract_constraint_terms(model, constraint_obj):
-    """Extract (coefficient, variable) pairs from one constraint."""
-
+    """Extract (coefficient, variable) pairs from one constraint sorted by variable name."""
     result = []
 
     for link in model.links:
@@ -65,29 +64,23 @@ def extract_constraint_terms(model, constraint_obj):
         for variable_link in model.links:
             if variable_link.association != term_ref_var:
                 continue
-
-            linked_term = connected_object(
-                variable_link, "terms"
-            )
-
+            linked_term = connected_object(variable_link, "terms")
             if linked_term == term_obj:
-                variable = connected_object(
-                    variable_link, "variable"
-                )
+                variable = connected_object(variable_link, "variable")
                 break
 
         if variable is None:
-            raise ValueError(
-                f"Term {term_obj.name} has no decision variable."
-            )
+            raise ValueError(f"Term {term_obj.name} has no decision variable.")
 
         result.append((term_obj.coef, variable))
 
+    result.sort(key=lambda item: item[1].name)
     return result
-
 
 def get_qubit_label(circuit, qubit_obj):
     """Identify register name and index for any qubit reference."""
+    if isinstance(qubit_obj, int):
+        return f"q[{qubit_obj}]"
     if qubit_obj is None:
         return "N/A"
     for qreg in circuit.qregs:
@@ -101,7 +94,7 @@ def find_target_qubit(op):
     """Extract target qubit from BESSER operation object."""
     if hasattr(op, "target_qubits") and op.target_qubits:
         return op.target_qubits[0]
-    if hasattr(op, "target_qubit") and op.target_qubit:
+    if hasattr(op, "target_qubit") and op.target_qubit is not None:
         return op.target_qubit
     return None
 
@@ -249,24 +242,21 @@ def transform_t2(lac_model, num_solutions=2):
             minimum += coefficient * variable_max
 
     accumulator_width = signed_bit_width(minimum, maximum)
-
-    # Instantiate Quantum Circuit and Registers
-    circuit = QuantumCircuit(name="Grover_Linear_Constraint_Search")
-
     num_decision_bits = sum(v.bitWidth for v in variables)
-    decision_register = QuantumRegister(name="decision", size=num_decision_bits)
-    accumulator_register = QuantumRegister(name="accumulator", size=accumulator_width)
-    mark_register = QuantumRegister(name="mark", size=1)
-    classical_register = ClassicalRegister(name="result", size=num_decision_bits)
+    total_qubits = num_decision_bits + accumulator_width + 1
 
-    circuit.add_qreg(decision_register)
-    circuit.add_qreg(accumulator_register)
-    circuit.add_qreg(mark_register)
+    # Define flat qubit indices for register 'q' (required by QiskitGenerator)
+    decision_qubits = list(range(0, num_decision_bits))
+    accumulator_qubits = list(range(num_decision_bits, num_decision_bits + accumulator_width))
+    mark_qubit = num_decision_bits + accumulator_width
+
+    # Instantiate Quantum Circuit with single 'q' register and Classical Register
+    circuit = QuantumCircuit(name="Grover_Linear_Constraint_Search")
+    qreg = QuantumRegister(name="q", size=total_qubits)
+    classical_register = ClassicalRegister(name="c", size=num_decision_bits)
+
+    circuit.add_qreg(qreg)
     circuit.add_creg(classical_register)
-
-    decision_qubits = list(decision_register.qubits)
-    accumulator_qubits = list(accumulator_register.qubits)
-    mark_qubit = mark_register.qubits[0]
 
     # 1. State preparation
     for qubit in decision_qubits:
@@ -324,7 +314,10 @@ def transform_t2(lac_model, num_solutions=2):
         "expression_minimum": minimum,
         "expression_maximum": maximum,
         "decision_variables": [variable.name for variable in variables],
+        "decision_width": num_decision_bits,
         "accumulator_width": accumulator_width,
+        "mark_width": 1,
+        "total_qubits": total_qubits,
         "grover_iterations": num_iterations,
         "stage": "T2.2_grover_circuit_generation",
     }
