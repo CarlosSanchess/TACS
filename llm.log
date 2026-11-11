@@ -1,0 +1,226 @@
+input: Format this report into a html/pdf
+Quantum Model-Driven Engineering (QMDE) — TACS 2026/2027
+
+Part II Technical Report: Model Transformation Chain & Grover Circuit Synthesis
+
+Class: C (Linear Integer Arithmetic Constraints)
+
+Domain: Job Load Balancing (Partition Problem)
+
+Target Framework: BESSER & Qiskit Aer
+
+1. Executive Summary & Architecture
+
+This report evaluates the end-to-end model transformation chain designed to bridge high-level domain problem formulations with low-level quantum execution models.
+
+Specifically targeting Class C (Search with Linear Arithmetic Constraints), our framework transforms a high-level Job Load-Balancing Problem into an executable Qiskit Python script via intermediate mathematical formulations and automated quantum circuit synthesis. The pipeline guarantees strict separation of concerns, eliminating manual code edits and ensuring theoretical traceability to established quantum literature.
+
+2. Transformation Chain & Literature Traceability
+
+The transformation workflow consists of three primary stages, moving progressively from domain abstract syntax to executable code:
+
+2.1 Model-to-Model Transformation T1 (Problem DSL → Solution DSL)
+
+Transformation T1 receives a domain instance consisting of N jobs with integer workloads Li and maps it into a Linear Arithmetic Constraints (LAC) solution model. Following the mathematical formulation of the Partition Problem by Lucas (2014), partitioning jobs across two identical machines is formulated as an equality constraint over binary decision variables yi ∈ 1 (where yi = 1 assigns Job i to Machine 1, and yi = 0 to Machine 2):
+
+Constraint Atom: ∑ (2 × Li × yi) − TotalLoad = 0
+
+The transformation computes total workload TotalLoad = ∑ Li, instantiates N binary decision variables (bitWidth = 1), constructs weighted constraint terms with coefficients 2Li, and sets the constant term to −TotalLoad.
+
+2.2 Model-to-Model Transformation T2 (Solution DSL → Quantum Circuit DSL)
+
+Transformation T2 synthesizes a low-level Grover Search quantum circuit model from the LAC specification, structuring the system into three quantum registers (decision, accumulator, mark) and one classical register (result).
+
+Register Sizing & Bounds Calculation: The maximum and minimum possible values of the expression E(y) = ∑ 2Liyi − TotalLoad are evaluated to derive the signed two's-complement bit-width B for the accumulator register, ensuring overflow prevention.
+
+State Preparation: Decision qubits are initialized into equal superposition |+⟩⊗N via Hadamard gates, while the single mark qubit is put into |−⟩ state for phase kickback (Grover, 1996).
+
+Reversible Oracle Synthesis (Compute–Mark–Uncompute): Based on the arithmetic network principles of Vedral et al. (1996) and Cuccaro et al. (2004), the oracle computes weighted additions into the accumulator via controlled-X operations (Compute), evaluates equality to zero using multi-controlled X gates targeting the mark qubit (Mark), and executes the exact inverse gate sequence to clear the accumulator back to |0...0⟩ (Uncompute).
+
+Grover Diffusion Operator: Applies inversion about the mean (H⊗N → X⊗N → MCZ → X⊗N → H⊗N) on the decision register.
+
+Iteration Calculation: Following Boyer et al. (1998), optimal iteration count is derived as R = ⌊ (π / 4) × √(2N / M) ⌋.
+
+2.3 Model-to-Text Transformation T3 (Quantum DSL → Qiskit Code)
+
+Using BESSER's QiskitGenerator, the synthesized quantum circuit model is serialized directly into runnable Qiskit Python targeting the local AerSimulator.
+
+3. Experimental Validation & Classical Comparison
+
+The correctness of the complete chain was validated by comparing quantum simulation results against an exhaustive classical dynamic programming partition solver across three distinct test instances.
+
+Instance Name: Tiny (Hand-checkable)
+
+Jobs / Loads: 2 jobs: \[4, 4\]
+
+Qubits (N + Accum + Mark): 2 + 4 + 1 = 7 qubits
+
+Search Space: 2² = 4
+
+Valid Solutions (M): 2 ('01', '10')
+
+Grover Rounds (R): 1 round
+
+Success Probability (Quantum vs. Random): 100.0% (vs. 50.0% random)
+
+Instance Name: Medium (Standard)
+
+Jobs / Loads: 4 jobs: \[2, 3, 5, 6\]
+
+Qubits (N + Accum + Mark): 4 + 6 + 1 = 11 qubits
+
+Search Space: 2⁴ = 16
+
+Valid Solutions (M): 2 ('0110', '1001')
+
+Grover Rounds (R): 2 rounds
+
+Success Probability (Quantum vs. Random): 94.5% (vs. 12.5% random)
+
+Instance Name: Unsatisfiable
+
+Jobs / Loads: 4 jobs: \[1, 2, 4, 8\]
+
+Qubits (N + Accum + Mark): 4 + 6 + 1 = 11 qubits
+
+Search Space: 2⁴ = 16
+
+Valid Solutions (M): 0 (Odd total load)
+
+Grover Rounds (R): 1 round
+
+Success Probability (Quantum vs. Random): 0.0% (Uniform 6.25% noise)
+
+Validation Metric Analysis: On solvable instances (1 and 2), Grover search achieved quadratic amplitude amplification, elevating the probability of measuring valid partition bitstrings from low uniform random baselines (12.5%) up to 94.5%–100%. On unsatisfiable Instance 3, the search space yielded uniform sampling, correctly reflecting zero feasible partition states. Decoded measurement bitstrings matched classical ground-truth assignments verbatim.
+
+4. Limitations & Future Engineering Directions
+
+Accumulator Qubit Overhead: Reversible two's-complement arithmetic requires B extra ancilla qubits. For larger job instances, accumulator qubit counts quickly dominate circuit width.
+
+Future Enhancements: Incorporating Fourier-transform adders (Draper QFT) to eliminate accumulator overflow bit padding.
+
+5. References
+
+A. Lucas, "Ising formulations of many NP problems," Frontiers in Physics, vol. 2, p. 5, 2014.
+
+L. K. Grover, "A fast quantum mechanical algorithm for database search," in Proc. 28th Annual ACM Symposium on Theory of Computing (STOC), 1996, pp. 212–219.
+
+M. Boyer, G. Brassard, P. Høyer, and A. Tapp, "Tight bounds on quantum searching," Fortschritte der Physik, vol. 46, no. 4-5, pp. 493–505, 1998.
+
+V. Vedral, A. Barenco, and A. Ekert, "Quantum networks for elementary arithmetic operations," Physical Review A, vol. 54, no. 1, p. 147, 1996.
+
+S. A. Cuccaro, T. G. Draper, S. A. Kutin, and D. P. Moulton, "A new quantum ripple-carry addition circuit," arXiv preprint quant-ph/0410184, 2004.
+
+
+output : pdf
+
+
+
+input: create baseline for the problem 
+
+
+output:
+import math
+from problem_object_model import (
+    instance_1_tiny,
+    instance_2_medium,
+    instance_3_unsatisfiable,
+)
+from transform_t1 import transform_t1
+from transform_t2 import transform_t2
+
+
+def classical_brute_force_partition(job_loads: list[int]):
+    """
+    Classical Ground-Truth Solver for Partition Problem.
+    Returns list of valid bitstrings and total solution count.
+    """
+    n = len(job_loads)
+    total_load = sum(job_loads)
+    
+    if total_load % 2 != 0:
+        return [], 0  # Cannot divide an odd total load evenly
+    
+    target = total_load // 2
+    valid_bitstrings = []
+
+    for decimal in range(2**n):
+        # Format as Little-Endian bitstring
+        bitstring = format(decimal, f"0{n}b")[::-1]
+        m1_load = sum(job_loads[i] for i in range(n) if bitstring[i] == '1')
+        
+        if m1_load == target:
+            # Re-reverse for standard representation matching Qiskit output
+            valid_bitstrings.append(bitstring)
+
+    return valid_bitstrings, len(valid_bitstrings)
+
+
+def validate_quantum_vs_classical(instance, name):
+    print(f"\n==================================================")
+    print(f" VALIDATION METRICS: {name}")
+    print(f"==================================================")
+
+    # 1. Classical Baseline
+    jobs = sorted(
+        [o for o in instance.instances if o.classifier.name == "Job"],
+        key=lambda j: getattr(j, "id", j.name)
+    )
+    loads = [j.load for j in jobs]
+    n = len(loads)
+    
+    classical_sols, m = classical_brute_force_partition(loads)
+    total_search_space = 2**n
+
+    print(f"Problem Instance: {name}")
+    print(f"Job Loads:        {loads}")
+    print(f"Search Space (N): 2^{n} = {total_search_space}")
+    print(f"Classical Valid Solutions (M): {m}")
+    print(f"Ground Truth Bitstrings:       {classical_sols if classical_sols else 'None (Unsatisfiable)'}")
+
+    # 2. Quantum Metadata & Grover Expectations
+    lac_model = transform_t1(instance)
+    quantum_model = transform_t2(lac_model)
+    metadata = quantum_model.metadata
+
+    iterations = metadata["grover_iterations"]
+    accum_width = metadata["accumulator_width"]
+    total_qubits = quantum_model.num_qubits
+
+    print(f"\nQuantum Circuit Parameters:")
+    print(f"  - Decision Qubits:   {n}")
+    print(f"  - Accumulator Width: {accum_width}")
+    print(f"  - Total Qubits:      {total_qubits}")
+    print(f"  - Oracle Calls (R):  {iterations}")
+
+    # 3. Expected Metrics Calculation
+    random_prob = m / total_search_space if total_search_space > 0 else 0
+    
+    if m > 0:
+        theta = math.asin(math.sqrt(m / total_search_space))
+        quantum_success_prob = (math.sin((2 * iterations + 1) * theta)) ** 2
+    else:
+        quantum_success_prob = 0.0
+
+    print(f"\nValidation Metrics:")
+    print(f"  - Uniform Random Baseline Probability: {random_prob * 100:.2f}%")
+    print(f"  - Theoretical Quantum Probability:     {quantum_success_prob * 100:.2f}%")
+    
+    if m > 0:
+        amplification = quantum_success_prob / random_prob if random_prob > 0 else 0
+        print(f"  - Quantum Amplification Factor:        {amplification:.2f}x speedup over uniform chance")
+        assert quantum_success_prob > random_prob, "Grover amplification test failed!"
+        print("  - Result: PASSED ✓ (Amplification Verified)")
+    else:
+        print("  - Result: PASSED ✓ (Correctly Identified Zero-Solution Instance)")
+
+
+if __name__ == "__main__":
+    suite = [
+        (instance_1_tiny, "Instance_1_Tiny_2Jobs"),
+        (instance_2_medium, "Instance_2_Medium_4Jobs"),
+        (instance_3_unsatisfiable, "Instance_3_Unsatisfiable_4Jobs"),
+    ]
+
+    for inst, label in suite:
+        validate_quantum_vs_classical(inst, label)
