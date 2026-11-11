@@ -5,74 +5,106 @@ from models import (
 )
 from besser.BUML.metamodel.object import Object, Link, LinkEnd, ObjectModel
 
-# Create Objects
-lb_obj = Object(name="LoadBalancing_4Jobs", classifier=lb_problem)
-lb_obj.name = "LoadBalancing_4Jobs"
-
-m1_obj = Object(name="Machine_1", classifier=machine)
-m1_obj.name = "Machine_1"
-
-m2_obj = Object(name="Machine_2", classifier=machine)
-m2_obj.name = "Machine_2"
-
-j1_obj = Object(name="j1", classifier=job)
-j1_obj.id = "j1"
-j1_obj.load = 2
-
-j2_obj = Object(name="j2", classifier=job)
-j2_obj.id = "j2"
-j2_obj.load = 3
-
-j3_obj = Object(name="j3", classifier=job)
-j3_obj.id = "j3"
-j3_obj.load = 5
-
-j4_obj = Object(name="j4", classifier=job)
-j4_obj.id = "j4"
-j4_obj.load = 6
-
-# Define Association Ends
+# Pre-fetch association ends
 lb_m_prob_end = next(end for end in lb_has_machines.ends if end.name == "problem")
 lb_m_mach_end = next(end for end in lb_has_machines.ends if end.name == "machines")
 lb_j_prob_end = next(end for end in lb_has_jobs.ends if end.name == "problem")
 lb_j_jobs_end = next(end for end in lb_has_jobs.ends if end.name == "jobs")
 
-# Define Links
-links_problem = {
-    Link(name="link_lb_m1", association=lb_has_machines, connections=[
+
+def create_load_balancing_instance(instance_name: str, job_loads: list[int]) -> ObjectModel:
+    """
+    Factory function to create a LoadBalancingProblem ObjectModel instance.
+    """
+    # 1. Create Problem & Machine Objects
+    lb_obj = Object(name=instance_name, classifier=lb_problem)
+    lb_obj.name = instance_name
+
+    m1_obj = Object(name="Machine_1", classifier=machine)
+    m1_obj.name = "Machine_1"
+
+    m2_obj = Object(name="Machine_2", classifier=machine)
+    m2_obj.name = "Machine_2"
+
+    instances = {lb_obj, m1_obj, m2_obj}
+    links = set()
+
+    # 2. Add Machine Links
+    links.add(Link(name=f"link_m1_{instance_name}", association=lb_has_machines, connections=[
         LinkEnd(name="problem", association_end=lb_m_prob_end, object=lb_obj),
         LinkEnd(name="machines", association_end=lb_m_mach_end, object=m1_obj)
-    ]),
-    Link(name="link_lb_m2", association=lb_has_machines, connections=[
+    ]))
+    links.add(Link(name=f"link_m2_{instance_name}", association=lb_has_machines, connections=[
         LinkEnd(name="problem", association_end=lb_m_prob_end, object=lb_obj),
         LinkEnd(name="machines", association_end=lb_m_mach_end, object=m2_obj)
-    ]),
-    Link(name="link_lb_j1", association=lb_has_jobs, connections=[
-        LinkEnd(name="problem", association_end=lb_j_prob_end, object=lb_obj),
-        LinkEnd(name="jobs", association_end=lb_j_jobs_end, object=j1_obj)
-    ]),
-    Link(name="link_lb_j2", association=lb_has_jobs, connections=[
-        LinkEnd(name="problem", association_end=lb_j_prob_end, object=lb_obj),
-        LinkEnd(name="jobs", association_end=lb_j_jobs_end, object=j2_obj)
-    ]),
-    Link(name="link_lb_j3", association=lb_has_jobs, connections=[
-        LinkEnd(name="problem", association_end=lb_j_prob_end, object=lb_obj),
-        LinkEnd(name="jobs", association_end=lb_j_jobs_end, object=j3_obj)
-    ]),
-    Link(name="link_lb_j4", association=lb_has_jobs, connections=[
-        LinkEnd(name="problem", association_end=lb_j_prob_end, object=lb_obj),
-        LinkEnd(name="jobs", association_end=lb_j_jobs_end, object=j4_obj)
-    ]),
-}
+    ]))
 
-# Construct Object Model Instance
-problem_instance = ObjectModel(
-    name="LoadBalancingProblemInstance",
-    objects={lb_obj, m1_obj, m2_obj, j1_obj, j2_obj, j3_obj, j4_obj}
+    # 3. Create Job Objects & Links
+    for idx, load in enumerate(job_loads, start=1):
+        j_id = f"j{idx}"
+        j_obj = Object(name=j_id, classifier=job)
+        j_obj.id = j_id
+        j_obj.load = load
+
+        instances.add(j_obj)
+
+        links.add(Link(name=f"link_{j_id}_{instance_name}", association=lb_has_jobs, connections=[
+            LinkEnd(name="problem", association_end=lb_j_prob_end, object=lb_obj),
+            LinkEnd(name="jobs", association_end=lb_j_jobs_end, object=j_obj)
+        ]))
+
+    # Instantiate ObjectModel with objects
+    model = ObjectModel(
+        name=instance_name,
+        objects=instances
+    )
+
+    # Populate links in-place on the model's links set
+    try:
+        model.links.update(links)
+    except AttributeError:
+        model._links = links
+
+    return model
+
+
+# =====================================================================
+# THREE TEST INSTANCES
+# =====================================================================
+
+instance_1_tiny = create_load_balancing_instance(
+    instance_name="LoadBalancing_Tiny_2Jobs",
+    job_loads=[4, 4]
 )
 
+# Instance 2: Medium (4 jobs) - Standard problem instance with known solutions
+# Loads: [2, 3, 5, 6] -> Total 16 -> Balanced target = 8 per machine.
+# Solutions: (2+6=8) and (3+5=8) -> bitstrings '1001' and '0110'
+instance_2_medium = create_load_balancing_instance(
+    instance_name="LoadBalancing_Medium_4Jobs",
+    job_loads=[2, 3, 5, 6]
+)
+
+# Instance 3: Unsatisfiable / No Solution (4 jobs, odd total load)
+# Loads: [1, 2, 4, 8] -> Total 15 (Odd) -> Impossible to split equally into integers.
+# Purpose: Tests Grover algorithm behavior when 0 solutions exist.
+instance_3_unsatisfiable = create_load_balancing_instance(
+    instance_name="LoadBalancing_Unsatisfiable_4Jobs",
+    job_loads=[1, 2, 4, 8]
+)
+
+# Default alias for backward compatibility
+problem_instance = instance_2_medium
+
+models = [problem_model]
+
+
 if __name__ == "__main__":
-    print(f"Problem Instance created: {len(problem_instance.instances)} objects, {len(problem_instance.links)} links.")
-
-
-    models = [problem_model]
+    test_instances = [instance_1_tiny, instance_2_medium, instance_3_unsatisfiable]
+    
+    print("========== INSTANCE CREATION SUMMARY ==========")
+    for inst in test_instances:
+        objs = inst.objects if hasattr(inst, "objects") and inst.objects else inst.instances
+        jobs = [o for o in objs if o.classifier == job]
+        loads = [j.load for j in jobs]
+        print(f"Instance: {inst.name:<35} | Jobs: {len(jobs)} | Loads: {loads} | Total Load: {sum(loads)}")
