@@ -108,12 +108,14 @@ def extract_problem_loads(problem_object_model) -> List[int]:
     if raw_objs is None:
         raw_objs = getattr(problem_object_model, "objects", set())
 
-    # Filter and sort job objects by ID
+    # Filter job objects
     job_objs = [
         obj for obj in raw_objs 
         if getattr(obj.classifier, "name", "") == "Job" and hasattr(obj, "load")
     ]
-    job_objs.sort(key=lambda j: getattr(j, "id", getattr(j, "name", "")))
+
+    # Sort by name or id, guaranteeing a non-None string key
+    job_objs.sort(key=lambda j: getattr(j, "name", None) or getattr(j, "id", None) or str(id(j)))
 
     return [int(j.load) for j in job_objs]
 
