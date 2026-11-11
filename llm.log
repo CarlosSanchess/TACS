@@ -395,7 +395,46 @@ Qualification:
 This verifies a small BESSER-generated circuit only. It does not verify
 generation or execution of the complete Grover circuit.
 
-PROMPT 7 — Include prompts and outputs in the usage log
+PROMPT 7 — Fix non-deterministic term ordering in Transformation T2
+
+User prompt:
+"can you find in these 2 files where the medium instance has the bitstrings in the incorrect order? 0011 and 1100 instead of 0110 and 1001"
+
+Assistant output / finding:
+
+- Identified that model.links in BESSER is an unordered set.
+
+- Iterating over model.links in extract_constraint_terms produced non-deterministic term ordering, scrambling job coefficients relative to sorted decision_qubits.
+
+- Fixed by adding result.sort(key=lambda item: item[1].name) in transform_t2.py.
+
+- Re-testing main.py boosted valid solution concentration from 0.5% to 94.8% (0110: 47.9%, 1001: 46.9%).
+
+PROMPT 8 — Eliminate console flooding without editing generated code
+
+User prompt:
+"Omit the diagram drawings by besser in the console output without editing the generated code."
+
+Assistant output / finding:
+
+- Confirmed Section 7.2 guideline ("Generated code must not be edited by hand").
+
+- Refactored main.py execution block to use subprocess.run with capture_output=True.
+
+- Absorbed standard output silently while parsing Counts: dictionary line-by-line using ast.literal_eval, maintaining 100% compliance with Section 7.2 and keeping terminal output clean.
+
+PROMPT 9 — Resolve BESSER Object sorting TypeError in baseline integration
+
+User prompt:
+"TypeError: '<' not supported between instances of 'NoneType' and 'NoneType' in extract_problem_loads"
+
+Assistant output / finding:
+
+- Identified that BESSER Object instances return None when accessing unassigned .id attributes, causing sorted() to fail on None < None.
+
+- Implemented get_job_name(j) fallback key (getattr(j, "name", None) or getattr(j, "id", None) or str(id(j))) in both main.py and classical_baseline.py.
+
+PROMPT 10 — Include prompts and outputs in the usage log
 -------------------------------------------------------
 User prompt:
 "some prompts and outputs should be included"
